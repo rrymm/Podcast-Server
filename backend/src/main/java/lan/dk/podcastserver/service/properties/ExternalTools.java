@@ -14,4 +14,5 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class ExternalTools {
     private String ffmpeg = "/usr/local/bin/ffmpeg";
     private String rtmpdump = "/usr/local/bin/rtmpdump";
+    private String youtubedl = "/usr/local/bin/youtube-dl";
 }
