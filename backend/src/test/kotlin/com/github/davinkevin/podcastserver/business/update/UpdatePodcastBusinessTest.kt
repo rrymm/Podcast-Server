@@ -10,7 +10,6 @@ import com.github.davinkevin.podcastserver.manager.worker.Updater
 import com.github.davinkevin.podcastserver.service.properties.PodcastServerParameters
 import com.github.davinkevin.podcastserver.utils.toVΛVΓ
 import com.nhaarman.mockitokotlin2.*
-import io.vavr.API.Tuple
 import lan.dk.podcastserver.entity.Item
 import lan.dk.podcastserver.entity.Podcast
 import lan.dk.podcastserver.entity.Status
@@ -18,6 +17,7 @@ import lan.dk.podcastserver.repository.ItemRepository
 import lan.dk.podcastserver.repository.PodcastRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -32,8 +32,8 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.time.ZonedDateTime
 import java.util.*
-import java.util.concurrent.TimeUnit
-import java.util.function.Predicate
+import java.util.concurrent.TimeUnit.MILLISECONDS
+import java.util.concurrent.TimeUnit.SECONDS
 import javax.validation.ConstraintViolation
 import javax.validation.Validator
 
@@ -57,7 +57,7 @@ class UpdatePodcastBusinessTest {
     @BeforeEach
     fun beforeEach() {
         updatePodcastBusiness = UpdatePodcastBusiness(podcastRepository, itemRepository, updaterSelector, template, podcastServerParameters, updateExecutor, manualExecutor, validator, coverBusiness)
-        updatePodcastBusiness.setTimeOut(1, TimeUnit.SECONDS)
+        updatePodcastBusiness.setTimeOut(1, SECONDS)
         Item.rootFolder = ROOT_FOLDER
         updateExecutor.initialize()
         manualExecutor.initialize()
@@ -154,7 +154,7 @@ class UpdatePodcastBusinessTest {
             whenever(updaterSelector.of(podcast.url)).thenReturn(updater)
             whenever(updater.update(any())).then {
                 val p = it.getArgument<Podcast>(0)
-                Tuple(p, generateItems(10, p).toVΛVΓ(), Predicate<Item> { false })
+                UpdatePodcastInformation(p, generateItems(10, p)) { false }
             }
 
             /* When */
@@ -213,20 +213,24 @@ class UpdatePodcastBusinessTest {
             val updater = mock<Updater>()
             val podcast1 = Podcast().apply {
                 id = UUID.randomUUID()
-                title = "podcast1"
-                url = "http://foo.bar.com"
+                title = "podcast_async"
+                url = "http://a.specific.url.com"
             }
-            updatePodcastBusiness.setTimeOut(1, TimeUnit.MILLISECONDS)
+            updatePodcastBusiness.setTimeOut(1, MILLISECONDS)
             whenever(updaterSelector.of(podcast1.url)).thenReturn(updater)
-            whenever(updater.update(any())).then { TimeUnit.SECONDS.sleep(1) }
+            whenever(updater.update(podcast1)).then { SECONDS.sleep(1) }
             whenever(podcastRepository.findById(any())).thenReturn(Optional.of(podcast1))
 
             /* When */
             updatePodcastBusiness.updatePodcast(UUID.randomUUID())
 
             /* Then */
-            assertThat(podcast1.lastUpdate).isNull()
-            verify(podcastRepository, times(1)).findById(any())
+            await().atMost(2, SECONDS).untilAsserted {
+                assertThat(podcast1.lastUpdate).isNull()
+                verify(podcastRepository, times(1)).findById(any())
+                verify(podcastRepository, never()).save(any())
+                verifyNoMoreInteractions(updater)
+            }
         }
 
         @Nested
