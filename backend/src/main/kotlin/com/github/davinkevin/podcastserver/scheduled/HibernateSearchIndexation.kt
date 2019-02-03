@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component
 @Component
 class HibernateSearchIndexation(private val itemBusiness: ItemBusiness) {
 
-    @Scheduled(fixedDelay = 86400000)
+//    @Scheduled(fixedDelay = 86400000)
     fun refreshIndex() = itemBusiness.reindex()
 
 }
