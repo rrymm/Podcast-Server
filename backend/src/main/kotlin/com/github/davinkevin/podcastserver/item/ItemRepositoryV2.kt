@@ -4,14 +4,22 @@ import com.github.davinkevin.podcastserver.business.stats.NumberOfItemByDateWrap
 import com.github.davinkevin.podcastserver.business.stats.StatsPodcastType
 import com.github.davinkevin.podcastserver.database.Tables.ITEM
 import com.github.davinkevin.podcastserver.database.Tables.PODCAST
+import com.github.davinkevin.podcastserver.database.Tables.WATCH_LIST_ITEMS
 import com.github.davinkevin.podcastserver.database.tables.records.ItemRecord
+import com.github.davinkevin.podcastserver.entity.Status.FINISH
+import com.github.davinkevin.podcastserver.entity.Status.NOT_DOWNLOADED
 import com.github.davinkevin.podcastserver.utils.toVΛVΓ
 import org.jooq.DSLContext
 import org.jooq.TableField
-import org.jooq.impl.DSL.*
+import org.jooq.impl.DSL.count
+import org.jooq.impl.DSL.currentDate
+import org.jooq.impl.DSL.date
+import org.jooq.impl.DSL.dateDiff
+import org.jooq.impl.DSL.trunc
 import org.springframework.stereotype.Repository
 import java.sql.Timestamp
 import java.time.Duration
+import java.time.ZonedDateTime
 import java.time.ZonedDateTime.now
 import java.util.*
 
@@ -72,13 +80,40 @@ order by parsedatetime(formatdatetime("PUBLIC"."ITEM"."PUB_DATE", 'yyyy-MM-dd'),
                 .orderBy(date.desc())
                 .groupBy { it[PODCAST.TYPE] }
                 .map { StatsPodcastType(
-                            type = it.key,
-                            values = it.value
-                                    .map { (_, number, date) -> NumberOfItemByDateWrapper(date.toLocalDateTime().toLocalDate(), number) }
-                                    .toSet()
-                                    .toVΛVΓ()
-                    )
+                        type = it.key,
+                        values = it.value
+                                .map { (_, number, date) -> NumberOfItemByDateWrapper(date.toLocalDateTime().toLocalDate(), number) }
+                                .toSet()
+                                .toVΛVΓ()
+                )
                 }
 
     }
+
+    fun findAllToDelete(date: ZonedDateTime) = query
+            .select(ITEM.ID, PODCAST.TITLE)
+            .from(ITEM.innerJoin(PODCAST).on(ITEM.PODCAST_ID.eq(PODCAST.ID)))
+            .where(ITEM.DOWNLOAD_DATE.lessOrEqual(Timestamp.valueOf(date.toLocalDateTime())))
+            .and(ITEM.STATUS.eq(FINISH.toString()))
+            .and(PODCAST.HAS_TO_BE_DELETED.isTrue)
+            .and(ITEM.ID.notIn(
+                    query.select(WATCH_LIST_ITEMS.ITEMS_ID).from(WATCH_LIST_ITEMS))
+            )
+            .fetch { DeleteInformation(it[ITEM.ID], it[PODCAST.TITLE])  }
+            .toSet()
+
+    fun findAllToDownload(date: ZonedDateTime , maxNumberOfRetry: Int): Set<UUID> {
+        return query
+                .select(ITEM.ID)
+                .from(ITEM)
+                .where(ITEM.PUB_DATE.greaterOrEqual(Timestamp.valueOf(date.toLocalDateTime())))
+                .and(
+                        ITEM.STATUS.eq(NOT_DOWNLOADED.toString())
+                                .or(ITEM.NUMBER_OF_FAIL.lessOrEqual(maxNumberOfRetry))
+                )
+                .fetch { it[ITEM.ID] }
+                .toSet()
+    }
 }
+
+data class DeleteInformation(val itemId: UUID, val podcastTitle: String)
