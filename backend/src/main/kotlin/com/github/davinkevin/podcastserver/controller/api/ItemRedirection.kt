@@ -1,41 +1,35 @@
 package com.github.davinkevin.podcastserver.controller.api
 
-import com.github.davinkevin.podcastserver.business.ItemBusiness
+import com.github.davinkevin.podcastserver.item.ItemService
 import com.github.davinkevin.podcastserver.service.UrlService
 import org.slf4j.LoggerFactory
-import org.springframework.http.HttpHeaders
-import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.reactive.function.server.ServerResponse.seeOther
 import org.springframework.web.server.ServerWebExchange
 import org.springframework.web.util.UriComponentsBuilder
-import reactor.core.publisher.Mono
+import java.net.URI
 import java.util.*
 
 //@Controller
 @RequestMapping("/api/podcasts/{idPodcast}/items")
-class ItemRedirection(private val itemBusiness: ItemBusiness) {
+class ItemRedirection(private val itemService: ItemService) {
 
-    internal var log = LoggerFactory.getLogger(ItemRedirection::class.java)
+    private var log = LoggerFactory.getLogger(ItemRedirection::class.java)
 
     @GetMapping(value = ["{id}/{file}"])
-    fun file(@PathVariable id: UUID, exchange: ServerWebExchange): Mono<Void> {
-        val item = itemBusiness.findOne(id)
-
-        val redirect = if (item.isDownloaded) {
-            UriComponentsBuilder.fromUri(UrlService.getDomainFromRequest(exchange))
-                    .pathSegment("data", item.podcast!!.title, item.fileName)
-                    .build().toUri()
-                    .toASCIIString()
-        } else {
-            item.url
-        }
-
-        log.info("redirection to {}", redirect)
-        exchange.response.statusCode = HttpStatus.SEE_OTHER
-        exchange.response.headers.add(HttpHeaders.LOCATION, redirect)
-
-        return exchange.response.setComplete()
-    }
+    fun file(@PathVariable id: UUID, exchange: ServerWebExchange) =
+            itemService.findById(id)
+                    .map {
+                        if (it.isDownloaded()) {
+                            UriComponentsBuilder.fromUri(UrlService.getDomainFromRequest(exchange))
+                                    .pathSegment("data", it.podcast.title, it.fileName)
+                                    .build().toUri()
+                        } else {
+                            URI(it.url)
+                        }
+                    }
+                    .doOnNext { log.info("Redirect to {}", it)}
+                    .flatMap { seeOther(it).build() }
 }
