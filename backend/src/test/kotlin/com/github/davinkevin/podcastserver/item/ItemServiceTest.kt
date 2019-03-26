@@ -1,11 +1,16 @@
 package com.github.davinkevin.podcastserver.item
 
 import com.github.davinkevin.podcastserver.entity.Status
+import com.github.davinkevin.podcastserver.manager.ItemDownloadManager
 import com.github.davinkevin.podcastserver.service.FileService
 import com.github.davinkevin.podcastserver.service.properties.PodcastServerParameters
 import com.nhaarman.mockitokotlin2.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.context.annotation.Import
@@ -29,6 +34,7 @@ class ItemServiceTest {
     @MockBean lateinit var repository: ItemRepositoryV2
     @MockBean lateinit var p: PodcastServerParameters
     @MockBean lateinit var fileService: FileService
+    @MockBean lateinit var idm: ItemDownloadManager
 
     val item = Item(
             id = UUID.fromString("27184b1a-7642-4ffd-ac7e-14fb36f7f15c"),
@@ -99,5 +105,30 @@ class ItemServiceTest {
                 .expectSubscription()
                 .expectNext(item)
                 .verifyComplete()
+    }
+
+    @Nested
+    @DisplayName("should reset")
+    inner class ShouldReset {
+
+        @BeforeEach
+        fun beforeEach() = Mockito.reset(fileService, repository)
+
+        @Test
+        fun `and do nothing because item is currently downloading`() {
+            /* Given */
+            whenever(idm.isInDownloadingQueueById(item.id)).thenReturn(true)
+            whenever(repository.resetById(item.id)).thenReturn(item.toMono())
+
+            /* When */
+            StepVerifier.create(itemService.reset(item.id))
+                    /* Then */
+                    .expectSubscription()
+                    .expectNext(item)
+                    .verifyComplete()
+
+            verify(repository, never()).hasToBeDeleted(any())
+        }
+
     }
 }
